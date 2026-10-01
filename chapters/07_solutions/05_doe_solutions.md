@@ -239,12 +239,16 @@ x1:x2          3.349     94.5
 x2:x3          2.227     99.8
 x1:x2:x3       0.078    100.0
 ```
-The 80% cumulative line falls *between* `x1:x3` (74.9%) and `x2` (86.4%) —
-a strict 80% cutoff would keep only three terms and drop `x2`, even though
-`x2` is a genuine, moderate-sized effect (true value −3). This is the same
-lesson Notebook 23 §23.3 draws from an almost identical situation: an 80%
-threshold is a starting point, not a substitute for looking at where the
-actual gap in the bar heights falls.
+The 80% line falls *between* `x1:x3` (74.9%) and `x2` (86.4%). The
+smallest set of terms that reaches 80% therefore has four members — `x1`,
+`x3`, `x1:x3` and `x2`, the term that crosses the line — which is right:
+`x2` is a genuine, moderate-sized effect (true value −3). Beware the
+tempting shortcut "keep the terms with `cum_pct <= 80`": it stops
+*before* the line and would drop `x2`. Even read correctly, the 80% line
+is a first look, not a decision rule: the next bar, `x1:x2` (3.35), is
+not much smaller than `x2` (4.79), so where the real gap falls still
+needs judgement — and with many terms the line fails outright (Notebook
+23 §23.7).
 :::
 
 ## Notebook 18: Fractional Factorial Designs
@@ -859,33 +863,34 @@ results1['y'] = results1[[f'Y{i+1}' for i in range(5)]].mean(axis=1)
 mod_full1 = smf.ols('y ~ A*B*C', data=results1).fit()
 effects1 = (2*mod_full1.params.drop('Intercept')).abs().sort_values(ascending=False)
 cum_pct1 = (effects1.cumsum()/effects1.sum()*100).round(1)
-print(pd.DataFrame({'standardized_effect': effects1.round(3), 'cum_pct': cum_pct1}))
+print(pd.DataFrame({'abs_effect': effects1.round(3), 'cum_pct': cum_pct1}))
 
-keep_terms1 = cum_pct1[cum_pct1 <= 80].index.tolist() or [effects1.index[0]]
-print('Terms kept (<=80% cumulative):', keep_terms1)
+keep_terms1 = cum_pct1.index[cum_pct1.shift(fill_value=0) < 80].tolist()   # smallest set reaching 80 %
+print('Terms kept (smallest set reaching 80%):', keep_terms1)
 ```
 Output:
 ```
-       standardized_effect  cum_pct
-B                     8.987     58.1
-C                     3.919     83.5
-A                     2.034     96.6
+   abs_effect  cum_pct
+B       8.987     58.1
+C       3.919     83.5
+A       2.034     96.6
 ...
 ```
 `B` correctly comes out as the largest bar (8.987, matching its built-in
 true effect of 4.5×2=9.0), confirming the Pareto chart correctly tracks
-whichever coefficient is dominant, not literally "A" by position. But the
-80%-cumulative rule again keeps **only `B`** — `C`'s cumulative total
-(83.5%) falls just past the 80% line, the same narrow-miss pattern Section
-23.3 found for `A:C` in the original run. This is a useful confirmation
-that the earlier finding wasn't a fluke of that particular simulation: an
-80%-cumulative cutoff is sensitive to exactly where the running total
-happens to cross the line, regardless of which factor is dominant.
+whichever coefficient is dominant, not literally "A" by position. The
+smallest set reaching 80% is **`B` and `C`** — `C` takes the running
+total past the line (83.5%) — but it drops **`A`** (2.034, true effect
+2.0), a genuine factor. As in Section 23.3, the 80% line is a first look,
+not a decision rule: where the running total happens to cross 80% decides
+what is kept, not the noise. With the 40 individual pellets (Section
+23.2), `A`'s true coefficient of 1.0 against a pellet scatter of σ = 0.3
+would be flagged easily.
 :::
 
-**Exercise 2 — Repeat for y2 or y3**
+**Exercise 2 — Repeat for hue (y2) or brightness (y3)**
 
-> **Hint:** The Yates-effect loop in Section 23.5 and the auto-generated
+> **Hint:** The contrast loop in Section 23.5 and the auto-generated
 > formula in Section 23.6 both work on any column name — just swap `'y1'`
 > for `'y3'` (or `'y2'`) throughout, then look at the top few `|effect|`
 > values to decide which terms belong in your own reduced model.
@@ -1010,7 +1015,7 @@ E          -1.0338    0.722  -1.433  0.288
 ```
 With only 8 runs (2 residual df), `A`, `B`, `C` still reach significance
 (p≤0.035), but `D` and `E` do **not** (p=0.414, 0.288) — even though both
-have real, nonzero true effects (−2.0 and −1.0). `D`'s failure has two
+have real, nonzero true coefficients (−2.0 and −1.0). `D`'s failure has two
 compounding causes: it is aliased with the genuinely real `A:B`
 interaction (true +2.0), which pulls its estimate from −2.0 toward
 $-2.0+2.0=0.0$ (fitted: −0.739, "hiding" the missing A:B signal inside
@@ -1204,11 +1209,14 @@ This isn't a bug in the filter: Section 25.5's own unconstrained search
 already reported EC=0.15 as the best blend (the bright region hugs the
 EC–EMC edge right down to the low end of EC, per that section's
 take-home message), so the practical minimum-EC requirement here happens
-not to bind at all — the best electrolyte for conductivity already
-satisfies the low-temperature-performance constraint with nothing to
-trade off. As with Notebook 20's Exercise 2, this is a legitimate,
-useful finding in its own right: a constraint you assumed would cost you
-something sometimes turns out to be free.
+not to bind at all — according to the *fitted* model, the constraint costs
+nothing. But Section 25.5 shows that the fitted optimum is misleading: the
+true best blend is pure DMC (6.0 mS/cm), which EC ≥ 0.15 excludes. With
+the true coefficients, the best blend satisfying the constraint is EC 0.15
+/ DMC 0.85 at 5.93 mS/cm — on a different edge from the fitted model's
+answer — so the constraint really costs about 0.07 mS/cm. A constraint
+that looks free under an uncertain model may not be; check the answer
+against the model's uncertainty (Section 25.5) before relying on it.
 :::
 
 **Exercise 5 — Steepest ascent, followed through**
@@ -1228,8 +1236,8 @@ def true_adhesive_extended(df):
     return 18 + 4*Ae + 6*Be + 3*Ce - 2*De - 1*Ee + 2*Ae*Be - 1.5*Ce*De
 
 n_steps = 20
-path_ext = pd.DataFrame([direction_normalized * step_size * i for i in range(n_steps)],
-                         columns=direction_normalized.index)
+path_ext = pd.DataFrame([start.values + direction_normalized.values * step_size * i
+                         for i in range(n_steps)], columns=list('ABCDE'))   # Section 25.1's path, from the corner
 path_ext['y_true'] = true_adhesive_extended(path_ext)
 path_ext['delta'] = path_ext['y_true'].diff()
 initial_gain = path_ext['delta'].iloc[1]
@@ -1240,15 +1248,20 @@ print('Initial marginal gain per step:', round(initial_gain, 3), 'MPa')
 print('First step where gain < 50% of initial:', first_below_half)
 print(path_ext[['y_true', 'delta', 'pct_of_initial_gain']].round(2))
 ```
-Output: the per-step marginal gain starts at **4.21 MPa/step**, and falls
-below **50% of that initial rate by step 7** (2.28 MPa/step, 54.2% of the
-initial gain) — well before the raw response stops climbing altogether
-(it is still gaining, just more and more slowly, by step 19). Because a
+Output: starting from Section 25.1's best corner (34.66 MPa on this
+saturating version of the process), the per-step marginal gain starts at
+**3.35 MPa/step** and falls below **50% of that initial rate at step 4**
+(1.61 MPa/step, 48.1% of the initial gain) — well before the raw response
+stops climbing altogether (it is still gaining, just more and more
+slowly, at step 19). For comparison, the classic path from the centre
+(4.21 MPa/step at first) reaches the same point only at step 7 (1.82
+MPa/step, 43.3%), at a lower strength (40.7 vs. 44.5 MPa): the corner
+start saves three experiments. Because a
 `tanh` saturation never actually reverses (it approaches a limit, it
 doesn't peak and fall), there is no single unambiguous "stop here" step
 the way a true quadratic optimum would give you; the 50%-of-initial-gain
 threshold is a reasonable, defensible proxy for "diminishing returns have
-become impossible to ignore," and step 7 is where an engineer running this
+become impossible to ignore," and step 4 is where an engineer running this
 sequence in real life would notice each additional experiment buying
 markedly less than the first few did — precisely the moment Notebook 22
 (Live Tutorial 1) §22.4's curvature test is designed to formalise, and
